@@ -1,18 +1,29 @@
 """
-Minimal WSGI application for Azure App Service
+Simple Flask WSGI application for Azure App Service
 """
-import os
-from flask import Flask
+from flask import Flask, jsonify
 
 app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return '<h1>✅ Flask Working!</h1><p>Customer Ops Portal</p>'
+    return '''<!DOCTYPE html>
+<html>
+<head>
+    <title>Customer Operations Portal</title>
+    <style>body { font-family: Arial; margin: 40px; }</style>
+</head>
+<body>
+    <h1>✅ Flask Running on Azure!</h1>
+    <p>Customer Operations Portal</p>
+    <hr>
+    <p><a href="/health">/health</a></p>
+</body>
+</html>'''
 
 @app.route('/health')
 def health():
-    return {'status': 'ok'}, 200
+    return jsonify({"status": "ok"}), 200
 
 if __name__ == '__main__':
     app.run()
