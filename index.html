@@ -1,0 +1,244 @@
+﻿{% extends "base.html" %}
+{% block content %}
+
+<nav class="workspace-tabs">
+    {% for tab_label, tab_value in workspace_tabs %}
+    <a href="{{ url_for('index', workspace=tab_value, status_filter=selected_project_status_filter) }}"
+       class="workspace-tab{% if tab_value == workspace %} active{% endif %}">
+        {{ tab_label }}
+    </a>
+    {% endfor %}
+</nav>
+
+<section class="card">
+    <h2>Dashboard</h2>
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <span class="kpi-label">Projects</span>
+            <strong class="kpi-value">{{ dashboard["projects_total"] }}</strong>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">Total Tasks</span>
+            <strong class="kpi-value">{{ dashboard["tasks_total"] }}</strong>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">Done</span>
+            <strong class="kpi-value">{{ dashboard["tasks_done"] }}</strong>
+        </div>
+        <div class="kpi-card warning">
+            <span class="kpi-label">Blocked</span>
+            <strong class="kpi-value">{{ dashboard["tasks_blocked"] }}</strong>
+        </div>
+        <div class="kpi-card danger">
+            <span class="kpi-label">Overdue</span>
+            <strong class="kpi-value">{{ dashboard["tasks_overdue"] }}</strong>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">Documents</span>
+            <strong class="kpi-value">{{ dashboard["documents_total"] }}</strong>
+        </div>
+    </div>
+
+    {% if risk_tasks %}
+    <h3>Risk Tasks</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Project</th>
+                <th>Task</th>
+                <th>Status</th>
+                <th>Due Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in risk_tasks %}
+            <tr>
+                <td>{{ task["project_name"] }} / {{ task["sub_project_name"] }}</td>
+                <td>{{ task["title"] }}</td>
+                <td>
+                    <span class="status-pill status-{{ task['status'] }}">{{ task_status_labels.get(task["status"], task["status"]) }}</span>
+                </td>
+                <td>{{ task["due_date"] or "-" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No blocked or overdue tasks.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Projects Tracker</h2>
+    <form method="get" action="{{ url_for('index') }}" class="grid">
+        <input type="hidden" name="workspace" value="{{ workspace }}">
+        <label>
+            Filter by Status
+            <select name="status_filter" onchange="this.form.submit()">
+                <option value="{{ project_status_filter_all }}" {% if selected_project_status_filter == project_status_filter_all %}selected{% endif %}>All statuses</option>
+                <option value="{{ project_status_filter_not_done }}" {% if selected_project_status_filter == project_status_filter_not_done %}selected{% endif %}>All except Done</option>
+                {% for status_option in project_status_options %}
+                <option value="{{ status_option }}" {% if selected_project_status_filter == status_option %}selected{% endif %}>{{ status_option }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </form>
+    {% if customers %}
+    <table>
+        <thead>
+            <tr>
+                <th>Project</th>
+                <th>Status</th>
+                <th>Completion</th>
+                <th>Shmil's Notes</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in customers %}
+            <tr>
+                <td>
+                    <div class="project-with-logo">
+                        <div class="logo-edit-wrap">
+                            {% if c["logo_storage_path"] %}
+                            <img src="{{ url_for('get_customer_logo', customer_id=c['id']) }}" alt="Logo for {{ c['name'] }}" class="project-logo-thumb project-logo-inline">
+                            {% else %}
+                            <div class="project-logo-thumb project-logo-placeholder">No Logo</div>
+                            {% endif %}
+                            <form method="post" action="{{ url_for('upload_customer_logo', customer_id=c['id']) }}" enctype="multipart/form-data" class="logo-upload-form logo-upload-overlay">
+                                <input type="hidden" name="status_filter" value="{{ selected_project_status_filter }}">
+                                <input type="hidden" name="workspace" value="{{ workspace }}">
+                                <input id="logo-file-{{ c['id'] }}" type="file" name="logo" accept="image/*" class="hidden-file-input" onchange="submitLogoForm(this)" required>
+                                <button type="button" class="secondary tiny-edit" onclick="openLogoPicker('logo-file-{{ c['id'] }}')">
+                                    {% if c["logo_storage_path"] %}Edit{% else %}+{% endif %}
+                                </button>
+                            </form>
+                        </div><span class="project-name">{{ c["name"] }}</span>
+                    </div>
+                </td>
+                <td>
+                    <form method="post" action="{{ url_for('update_customer_status', customer_id=c['id']) }}">
+                        <input type="hidden" name="status_filter" value="{{ selected_project_status_filter }}">
+                        <input type="hidden" name="workspace" value="{{ workspace }}">
+                        <select name="project_status" onchange="this.form.submit()">
+                            {% for status_option in project_status_options %}
+                            <option value="{{ status_option }}" {% if c["project_status"] == status_option %}selected{% endif %}>
+                                {{ status_option }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </td>
+                <td class="progress-cell">
+                    <form method="post" action="{{ url_for('update_customer_completion', customer_id=c['id']) }}" class="progress-form">
+                        <input type="hidden" name="status_filter" value="{{ selected_project_status_filter }}">
+                        <input type="hidden" name="workspace" value="{{ workspace }}">
+                        <div class="progress-wrap">
+                            <input type="range" min="0" max="100" value="{{ c['completion_pct'] }}"
+                                   name="completion_pct"
+                                   class="progress-slider"
+                                   oninput="this.style.setProperty('--pct',this.value+'%');this.closest('.progress-wrap').querySelector('.pct-label').textContent=this.value+'%'"
+                                   onchange="this.closest('form').submit()">
+                            <span class="pct-label">{{ c['completion_pct'] }}%</span>
+                        </div>
+                    </form>
+                </td>
+                <td class="notes-cell">
+                    <form method="post" action="{{ url_for('update_customer_shmil_notes', customer_id=c['id']) }}" class="notes-form">
+                        <input type="hidden" name="status_filter" value="{{ selected_project_status_filter }}">
+                        <input type="hidden" name="workspace" value="{{ workspace }}">
+                        <input type="text"
+                               name="shmil_notes"
+                               value="{{ c['shmil_notes'] or '' }}"
+                               class="notes-input"
+                               maxlength="140"
+                               onchange="this.form.submit()">
+                    </form>
+                </td>
+                <td>{{ c["created_at"] | simple_date }}</td>
+                <td class="action-cell">
+                    <div class="action-group">
+                        <a href="{{ url_for('customer_details', customer_id=c['id']) }}" class="button-link secondary small">Open</a>
+                        {% if c["contact_email"] %}
+                        <a href="{{ url_for('email_customer_contact', customer_id=c['id'], status_filter=selected_project_status_filter, workspace=workspace) }}"
+                           class="button-link secondary small">Email</a>
+                        {% else %}
+                        <form method="post" action="{{ url_for('update_customer_contact_email', customer_id=c['id']) }}" class="inline-form contact-inline-form">
+                            <input type="hidden" name="status_filter" value="{{ selected_project_status_filter }}">
+                            <input type="hidden" name="workspace" value="{{ workspace }}">
+                            <input type="email" name="contact_email" class="contact-inline-input" placeholder="contact@company.com" required>
+                            <button type="submit" class="secondary small">Save Contact</button>
+                        </form>
+                        {% endif %}
+                        <form method="post" action="{{ url_for('delete_customer', customer_id=c['id']) }}" class="inline-form"
+                              onsubmit="return confirm('Delete project {{ c['name'] }} and all related data?');">
+                        <input type="hidden" name="status_filter" value="{{ selected_project_status_filter }}">
+                        <input type="hidden" name="workspace" value="{{ workspace }}">
+                        <button type="submit" class="danger small">Delete</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    {% if selected_project_status_filter == project_status_filter_all %}
+    <p>No projects yet.</p>
+    {% else %}
+    <p>No projects match the selected status filter.</p>
+    {% endif %}
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Create Project</h2>
+    <form method="post" action="{{ url_for('create_customer') }}" class="grid">
+        <input type="hidden" name="status_filter" value="{{ selected_project_status_filter }}">
+        <input type="hidden" name="workspace" value="{{ workspace }}">
+        <label>
+            Name
+            <input type="text" name="name" required>
+        </label>
+        <label>
+            Contact Email
+            <input type="email" name="contact_email">
+        </label>
+        <label class="full">
+            Notes
+            <textarea name="notes" rows="3"></textarea>
+        </label>
+        <label>
+            Project Status
+            <select name="project_status">
+                {% for status_option in project_status_options %}
+                <option value="{{ status_option }}" {% if status_option == "Not Started yet" %}selected{% endif %}>{{ status_option }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit">Create Project</button>
+    </form>
+</section>
+<script>
+function openLogoPicker(inputId) {
+    var input = document.getElementById(inputId);
+    if (input) {
+        input.click();
+    }
+}
+
+function submitLogoForm(fileInput) {
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        fileInput.form.submit();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.progress-slider').forEach(function (s) {
+        s.style.setProperty('--pct', s.value + '%');
+    });
+});
+</script>
+{% endblock %}
+

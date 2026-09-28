@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <h2>{{ customer["name"] }}</h2>
+    <p><strong>Email:</strong> {{ customer["contact_email"] or "-" }}</p>
+    <p><strong>Notes:</strong> {{ customer["notes"] or "-" }}</p>
+    <form method="post" action="{{ url_for('delete_customer', customer_id=customer['id']) }}"
+          onsubmit="return confirm('Delete project {{ customer['name'] }} and all related data?');">
+        <button type="submit" class="danger">Delete Project</button>
+    </form>
+</section>
+
+<section class="card">
+    <h3>Create Project</h3>
+    <form method="post" action="{{ url_for('create_project', customer_id=customer['id']) }}" class="grid">
+        <label>
+            Name
+            <input type="text" name="name" required>
+        </label>
+        <label>
+            Status
+            <input type="text" name="status" value="planned">
+        </label>
+        <label>
+            Start Date
+            <input type="date" name="start_date">
+        </label>
+        <label>
+            End Date
+            <input type="date" name="end_date">
+        </label>
+        <label class="full">
+            Description
+            <textarea name="description" rows="2"></textarea>
+        </label>
+        <button type="submit">Create Project</button>
+    </form>
+</section>
+
+<section class="card">
+    <h3>Projects & Tasks</h3>
+    {% if projects %}
+        {% for project in projects %}
+         <div class="sub-card">
+            <div class="project-header">
+                <form method="post" action="{{ url_for('update_project_name', project_id=project['id']) }}" class="inline-edit-form project-edit-form">
+                    <input type="text" name="name" value="{{ project['name'] }}" class="project-title-input" required>
+                    <span class="project-status-inline">({{ project["status"] }})</span>
+                    <button type="submit" class="secondary tiny-edit" title="Save name">✓</button>
+                </form>
+            </div>
+            <p>{{ project["description"] or "-" }}</p>
+            <p><strong>Dates:</strong> {{ project["start_date"] or "-" }} to {{ project["end_date"] or "-" }}</p>
+
+            <form method="post" action="{{ url_for('create_task', project_id=project['id']) }}" class="grid">
+                <input type="hidden" name="customer_id" value="{{ customer['id'] }}">
+                <label>
+                    Task Title
+                    <input type="text" name="title" required>
+                </label>
+                <label>
+                    Status
+                    <select name="status">
+                        {% for task_status in task_workflow_statuses %}
+                        <option value="{{ task_status }}">{{ task_status_labels[task_status] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>
+                    Due Date
+                    <input type="date" name="due_date">
+                </label>
+                <label>
+                    Owner
+                    <input type="text" name="owner">
+                </label>
+                <button type="submit">Add Task</button>
+            </form>
+
+            {% set project_tasks = tasks_by_project.get(project["id"], []) %}
+            {% if project_tasks %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Task</th>
+                        <th>Status</th>
+                        <th>Due Date</th>
+                        <th>Owner</th>
+                        <th>Workflow</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in project_tasks %}
+                    <tr>
+                        <td>{{ task["title"] }}</td>
+                        <td>
+                            <span class="status-pill status-{{ task['status'] }}">{{ task_status_labels[task["status"]] }}</span>
+                        </td>
+                        <td>{{ task["due_date"] or "-" }}</td>
+                        <td>{{ task["owner"] or "-" }}</td>
+                        <td>
+                            {% for next_status in next_statuses_by_task.get(task["id"], []) %}
+                            <form method="post" action="{{ url_for('update_task_status', task_id=task['id']) }}" style="display:inline;">
+                                <input type="hidden" name="status" value="{{ next_status }}">
+                                <button type="submit" class="secondary">{{ task_status_labels[next_status] }}</button>
+                            </form>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p>No tasks yet.</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <p>No projects yet.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h3>Timeline / Gantt</h3>
+    {% if timeline["rows"] %}
+    <div class="timeline-toolbar">
+        <div class="timeline-zoom">
+            <button type="button" class="secondary small timeline-zoom-btn" data-zoom="7">7D</button>
+            <button type="button" class="secondary small timeline-zoom-btn" data-zoom="30">30D</button>
+            <button type="button" class="secondary small timeline-zoom-btn" data-zoom="90">90D</button>
+            <button type="button" class="secondary small timeline-zoom-btn active" data-zoom="all">All</button>
+        </div>
+        <div class="timeline-filters">
+            <label class="timeline-toggle">
+                <input type="checkbox" id="showTasks" checked>
+                Tasks
+            </label>
+            <label class="timeline-toggle">
+                <input type="checkbox" id="showWindows" checked>
+                Time Windows
+            </label>
+        </div>
+    </div>
+    <div class="timeline-scale">
+        <span id="timelineStartLabel">{{ timeline["start_label"] }}</span>
+        <span id="timelineEndLabel">{{ timeline["end_label"] }}</span>
+    </div>
+    <div class="timeline-wrap" id="timelineWrap"
+         data-start="{{ timeline['start_iso'] }}"
+         data-end="{{ timeline['end_iso'] }}">
+        {% for row in timeline["rows"] %}
+        <div class="timeline-row"
+             data-kind="{{ row['kind'] }}"
+             data-project="{{ row['project_name'] }}"
+             data-start="{{ row['start_iso'] }}"
+             data-end="{{ row['end_iso'] }}">
+            <div class="timeline-row-label">
+                <strong>{{ row["title"] }}</strong>
+                <span>{{ row["meta"] }}</span>
+            </div>
+            <div class="timeline-lane">
+                <div class="timeline-today-marker" hidden></div>
+                <div class="timeline-bar timeline-bar-{{ row['kind'] }}{% if row['status'] %} timeline-task-{{ row['status'] }}{% endif %}"
+                     style="left: {{ "%.2f"|format(row['left_pct']) }}%; width: {{ "%.2f"|format(row['width_pct']) }}%;">
+                    {{ row["range_label"] }}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p>Add time windows or due dates to display the timeline.</p>
+    {% endif %}
+</section>
+
+{% if timeline["rows"] %}
+<script>
+(() => {
+    const timelineWrap = document.getElementById("timelineWrap");
+    if (!timelineWrap) return;
+
+    const showTasksInput = document.getElementById("showTasks");
+    const showWindowsInput = document.getElementById("showWindows");
+    const startLabel = document.getElementById("timelineStartLabel");
+    const endLabel = document.getElementById("timelineEndLabel");
+    const zoomButtons = Array.from(document.querySelectorAll(".timeline-zoom-btn"));
+    const rows = Array.from(timelineWrap.querySelectorAll(".timeline-row"));
+
+    const fullStart = new Date(timelineWrap.dataset.start);
+    const fullEnd = new Date(timelineWrap.dataset.end);
+    let viewStart = new Date(fullStart);
+    let viewEnd = new Date(fullEnd);
+
+    function fmt(d) {
+        const dd = String(d.getDate()).padStart(2, "0");
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const yyyy = d.getFullYear();
+        return `${dd}-${mm}-${yyyy}`;
+    }
+
+    function toPct(value, min, max) {
+        const v = value.getTime();
+        const minMs = min.getTime();
+        const maxMs = max.getTime();
+        return ((v - minMs) / (maxMs - minMs)) * 100;
+    }
+
+    function apply() {
+        if (startLabel) startLabel.textContent = fmt(viewStart);
+        if (endLabel) endLabel.textContent = fmt(viewEnd);
+
+        rows.forEach((row) => {
+            const kind = row.dataset.kind;
+            if (kind === "task" && !showTasksInput.checked) {
+                row.style.display = "none";
+                return;
+            }
+            if (kind === "time-window" && !showWindowsInput.checked) {
+                row.style.display = "none";
+                return;
+            }
+
+            const bar = row.querySelector(".timeline-bar");
+            const marker = row.querySelector(".timeline-today-marker");
+            if (!bar) return;
+
+            const rawStart = new Date(row.dataset.start);
+            const rawEnd = new Date(row.dataset.end);
+            const start = rawStart < viewStart ? viewStart : rawStart;
+            const end = rawEnd > viewEnd ? viewEnd : rawEnd;
+
+            if (end < viewStart || start > viewEnd) {
+                row.style.display = "none";
+                return;
+            }
+
+            row.style.display = "";
+            const left = toPct(start, viewStart, viewEnd);
+            const right = toPct(end, viewStart, viewEnd);
+            const minWidth = kind === "task" ? 1.2 : 2.0;
+            const width = Math.max(right - left, minWidth);
+
+            bar.style.left = `${Math.max(0, left).toFixed(2)}%`;
+            bar.style.width = `${Math.min(width, 100 - left).toFixed(2)}%`;
+
+            const now = new Date();
+            if (marker) {
+                if (now >= viewStart && now <= viewEnd) {
+                    marker.hidden = false;
+                    marker.style.left = `${toPct(now, viewStart, viewEnd).toFixed(2)}%`;
+                } else {
+                    marker.hidden = true;
+                }
+            }
+        });
+    }
+
+    zoomButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+            zoomButtons.forEach((b) => b.classList.remove("active"));
+            btn.classList.add("active");
+            const z = btn.dataset.zoom;
+            if (z === "all") {
+                viewStart = new Date(fullStart);
+                viewEnd = new Date(fullEnd);
+            } else {
+                const days = Number(z);
+                const maxEnd = new Date(fullEnd);
+                const minStart = new Date(maxEnd);
+                minStart.setDate(minStart.getDate() - days);
+                viewStart = minStart < fullStart ? new Date(fullStart) : minStart;
+                viewEnd = maxEnd;
+            }
+            apply();
+        });
+    });
+
+    showTasksInput.addEventListener("change", apply);
+    showWindowsInput.addEventListener("change", apply);
+    apply();
+})();
+</script>
+{% endif %}
+
+<section class="card">
+    <h3>Create Time Window</h3>
+    <form method="post" action="{{ url_for('create_time_window', customer_id=customer['id']) }}" class="grid">
+        <label>
+            Label
+            <input type="text" name="label" required>
+        </label>
+        <label>
+            Project (optional)
+            <select name="project_id">
+                <option value="">None</option>
+                {% for project in projects %}
+                <option value="{{ project['id'] }}">{{ project["name"] }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            Start
+            <input type="datetime-local" name="start_at" required>
+        </label>
+        <label>
+            End
+            <input type="datetime-local" name="end_at" required>
+        </label>
+        <label class="full">
+            Notes
+            <textarea name="notes" rows="2"></textarea>
+        </label>
+        <button type="submit">Create Time Window</button>
+    </form>
+
+    {% if time_windows %}
+    <table>
+        <thead>
+            <tr>
+                <th>Label</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Project Id</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tw in time_windows %}
+            <tr>
+                <td>{{ tw["label"] }}</td>
+                <td>{{ tw["start_at"] }}</td>
+                <td>{{ tw["end_at"] }}</td>
+                <td>{{ tw["project_id"] or "-" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No time windows yet.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h3>Upload LLD/HLD/SOW</h3>
+    <form method="post" action="{{ url_for('upload_document', customer_id=customer['id']) }}" enctype="multipart/form-data" class="grid">
+        <label>
+            Document Type
+            <select name="doc_type" required>
+                {% for doc_type in allowed_doc_types %}
+                <option value="{{ doc_type }}">{{ doc_type }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            Project (optional)
+            <select name="project_id">
+                <option value="">None</option>
+                {% for project in projects %}
+                <option value="{{ project['id'] }}">{{ project["name"] }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="full">
+            File
+            <input type="file" name="document" required>
+        </label>
+        <button type="submit">Upload</button>
+    </form>
+
+    {% if documents %}
+    <table>
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Name</th>
+                <th>Project Id</th>
+                <th>Stored At</th>
+                <th>Links</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in documents %}
+            <tr>
+                <td>{{ d["doc_type"] }}</td>
+                <td>{{ d["file_name"] }}</td>
+                <td>{{ d["project_id"] or "-" }}</td>
+                <td>{{ d["storage_path"] }}</td>
+                <td>
+                    <a href="{{ url_for('preview_document', document_id=d['id']) }}" target="_blank">Preview</a>
+                    |
+                    <a href="{{ url_for('download_document', document_id=d['id']) }}">Download</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No documents yet.</p>
+    {% endif %}
+</section>
+{% endblock %}
