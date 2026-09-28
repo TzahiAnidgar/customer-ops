@@ -1,28 +1,34 @@
 """
-Simple Flask App for Azure App Service
+WSGI entry point for Azure App Service
+Loads the actual Flask application from app.app
 """
-from flask import Flask
+import sys
+import os
 
-app = Flask(__name__)
+# Add app directory to path
+sys.path.insert(0, os.path.dirname(__file__))
 
-@app.route('/')
-def home():
-    return '''<!DOCTYPE html>
+try:
+    from app.app import create_app
+    app = create_app()
+except Exception as e:
+    # Fallback if app.py fails to load
+    from flask import Flask
+    app = Flask(__name__)
+    
+    @app.route('/')
+    def error():
+        return f'''<!DOCTYPE html>
 <html>
-<head><title>Customer Ops</title></head>
+<head><title>Error</title></head>
 <body>
-<h1>Customer Operations Portal</h1>
-<p>App is running on Azure!</p>
+<h1>❌ Error Loading App</h1>
+<p>{str(e)}</p>
 <hr>
-<p><a href="/status">/status</a></p>
+<p><a href="/health">/health</a></p>
 </body>
 </html>'''
 
-@app.route('/status')
-def status():
-    return {'status': 'ok'}, 200
-
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
